@@ -49,6 +49,7 @@ BLERemoteCharacteristic::BLERemoteCharacteristic(
  *@brief Destructor.
  */
 BLERemoteCharacteristic::~BLERemoteCharacteristic() {
+	if(m_rawData != nullptr) free(m_rawData);
 	removeDescriptors();   // Release resources for any descriptor information we may have allocated.
 } // ~BLERemoteCharacteristic
 
@@ -255,7 +256,7 @@ void BLERemoteCharacteristic::retrieveDescriptors() {
 	uint16_t offset = 0;
 	esp_gattc_descr_elem_t result;
 	while(true) {
-		uint16_t count = 10;
+		uint16_t count = 1;
 		esp_gatt_status_t status = ::esp_ble_gattc_get_all_descr(
 			getRemoteService()->getClient()->getGattcIf(),
 			getRemoteService()->getClient()->getConnId(),
@@ -265,7 +266,7 @@ void BLERemoteCharacteristic::retrieveDescriptors() {
 			offset
 		);
 
-		if (status == ESP_GATT_INVALID_OFFSET) {   // We have reached the end of the entries.
+		if (status == ESP_GATT_INVALID_OFFSET || status == ESP_GATT_NOT_FOUND) {   // We have reached the end of the entries.
 			break;
 		}
 
@@ -454,7 +455,8 @@ void BLERemoteCharacteristic::registerForNotify(notify_callback notifyCallback, 
 		uint8_t val[] = {0x01, 0x00};
 		if(!notifications) val[0] = 0x02;
 		BLERemoteDescriptor* desc = getDescriptor(BLEUUID((uint16_t)0x2902));
-		desc->writeValue(val, 2);
+		if(desc != nullptr)
+			desc->writeValue(val, 2);
 	} // End Register
 	else {   // If we weren't passed a callback function, then this is an unregistration.
 		esp_err_t errRc = ::esp_ble_gattc_unregister_for_notify(
@@ -469,7 +471,8 @@ void BLERemoteCharacteristic::registerForNotify(notify_callback notifyCallback, 
 
 		uint8_t val[] = {0x00, 0x00};
 		BLERemoteDescriptor* desc = getDescriptor((uint16_t)0x2902);
-		desc->writeValue(val, 2);
+		if(desc != nullptr)
+			desc->writeValue(val, 2);
 	} // End Unregister
 
 	m_semaphoreRegForNotifyEvt.wait("registerForNotify");

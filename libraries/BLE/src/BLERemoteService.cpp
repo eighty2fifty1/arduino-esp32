@@ -157,14 +157,14 @@ BLERemoteCharacteristic* BLERemoteService::getCharacteristic(BLEUUID uuid) {
  * @return N/A
  */
 void BLERemoteService::retrieveCharacteristics() {
-	log_v(">> getCharacteristics() for service: %s", getUUID().toString().c_str());
+	log_v(">> retrieveCharacteristics() for service: %s", getUUID().toString().c_str());
 
 	removeCharacteristics(); // Forget any previous characteristics.
 
 	uint16_t offset = 0;
 	esp_gattc_char_elem_t result;
 	while (true) {
-		uint16_t count = 10;  // this value is used as in parameter that allows to search max 10 chars with the same uuid
+		uint16_t count = 1;   // this value is used as in parameter that allows to search max 10 chars with the same uuid
 		esp_gatt_status_t status = ::esp_ble_gattc_get_all_char(
 			getClient()->getGattcIf(),
 			getClient()->getConnId(),
@@ -175,7 +175,7 @@ void BLERemoteService::retrieveCharacteristics() {
 			offset
 		);
 
-		if (status == ESP_GATT_INVALID_OFFSET) {   // We have reached the end of the entries.
+		if (status == ESP_GATT_INVALID_OFFSET || status == ESP_GATT_NOT_FOUND) {   // We have reached the end of the entries.
 			break;
 		}
 
@@ -204,8 +204,8 @@ void BLERemoteService::retrieveCharacteristics() {
 	} // Loop forever (until we break inside the loop).
 
 	m_haveCharacteristics = true; // Remember that we have received the characteristics.
-	log_v("<< getCharacteristics()");
-} // getCharacteristics
+	log_v("<< retrieveCharacteristics()");
+} // retrieveCharacteristics
 
 
 /**
@@ -223,7 +223,21 @@ std::map<std::string, BLERemoteCharacteristic*>* BLERemoteService::getCharacteri
 	log_v("<< getCharacteristics() for service: %s", getUUID().toString().c_str());
 	return &m_characteristicMap;
 } // getCharacteristics
-
+/**
+ * @brief Retrieve a map of all the characteristics of this service.
+ * @return A map of all the characteristics of this service.
+ */
+std::map<uint16_t, BLERemoteCharacteristic*>* BLERemoteService::getCharacteristicsByHandle() {
+	ESP_LOGD(LOG_TAG, ">> getCharacteristicsByHandle() for service: %s", getUUID().toString().c_str());
+	// If is possible that we have not read the characteristics associated with the service so do that
+	// now.  The request to retrieve the characteristics by calling "retrieveCharacteristics" is a blocking
+	// call and does not return until all the characteristics are available.
+	if (!m_haveCharacteristics) {
+		retrieveCharacteristics();
+	}
+	ESP_LOGD(LOG_TAG, "<< getCharacteristicsByHandle() for service: %s", getUUID().toString().c_str());
+	return &m_characteristicMapByHandle;
+} // getCharacteristicsByHandle
 /**
  * @brief This function is designed to get characteristics map when we have multiple characteristics with the same UUID
  */
@@ -287,10 +301,6 @@ std::string BLERemoteService::getValue(BLEUUID characteristicUuid) {
  * @return N/A.
  */
 void BLERemoteService::removeCharacteristics() {
-	for (auto &myPair : m_characteristicMap) {
-	   delete myPair.second;
-	   //m_characteristicMap.erase(myPair.first);  // Should be no need to delete as it will be deleted by the clear
-	}
 	m_characteristicMap.clear();   // Clear the map
 	for (auto &myPair : m_characteristicMapByHandle) {
 	   delete myPair.second;
