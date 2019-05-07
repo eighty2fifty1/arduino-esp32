@@ -59,7 +59,8 @@ env.Append(
         "-Wno-unused-parameter",
         "-Wno-sign-compare",
         "-fstack-protector",
-        "-fexceptions"
+        "-fexceptions",
+        "-Werror=reorder"
     ],
 
     CXXFLAGS=[
@@ -97,7 +98,7 @@ env.Append(
     ],
 
     CPPPATH=[
-       join(FRAMEWORK_DIR, "tools", "sdk", "include", "config"),
+        join(FRAMEWORK_DIR, "tools", "sdk", "include", "config"),
         join(FRAMEWORK_DIR, "tools", "sdk", "include", "app_trace"),
         join(FRAMEWORK_DIR, "tools", "sdk", "include", "app_update"),
         join(FRAMEWORK_DIR, "tools", "sdk", "include", "asio"),
