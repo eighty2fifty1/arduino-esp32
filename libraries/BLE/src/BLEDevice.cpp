@@ -46,7 +46,6 @@ static const char* LOG_TAG = "BLEDevice";
  */
 BLEServer* BLEDevice::m_pServer = nullptr;
 BLEScan*   BLEDevice::m_pScan   = nullptr;
-BLEClient* BLEDevice::m_pClient = nullptr;
 bool       initialized          = false;  
 esp_ble_sec_act_t BLEDevice::m_securityLevel = (esp_ble_sec_act_t)0;
 BLESecurityCallbacks* BLEDevice::m_securityCallbacks = nullptr;
@@ -68,9 +67,24 @@ gatts_event_handler BLEDevice::m_customGattsHandler = nullptr;
 	log_e("BLE GATTC is not enabled - CONFIG_GATTC_ENABLE not defined");
 	abort();
 #endif  // CONFIG_GATTC_ENABLE
-	m_pClient = new BLEClient();
+	BLEClient* pClient = new BLEClient();
 	log_v("<< createClient");
-	return m_pClient;
+	return pClient;
+} // createClient
+
+/**
+ * @brief Create a new instance of a client.
+ * @return A new instance of the client.
+ */
+/* STATIC */ BLEClient* BLEDevice::createClient(BLEAdvertisedDevice* device) {
+	log_v(">> createClient");
+#ifndef CONFIG_GATTC_ENABLE  // Check that BLE GATTC is enabled in make menuconfig
+	log_e("BLE GATTC is not enabled - CONFIG_GATTC_ENABLE not defined");
+	abort();
+#endif  // CONFIG_GATTC_ENABLE
+	BLEClient* pClient = new BLEClient(device);
+	log_v("<< createClient");
+	return pClient;
 } // createClient
 
 
@@ -167,10 +181,10 @@ gatts_event_handler BLEDevice::m_customGattsHandler = nullptr;
 		default:
 			break;
 	} // switch
-	for(auto &myPair : BLEDevice::getPeerDevices(true)) {
-		conn_status_t conn_status = (conn_status_t)myPair.second;
-		if(((BLEClient*)conn_status.peer_device)->getGattcIf() == gattc_if || ((BLEClient*)conn_status.peer_device)->getGattcIf() == ESP_GATT_IF_NONE || gattc_if == ESP_GATT_IF_NONE){
-			((BLEClient*)conn_status.peer_device)->gattClientEventHandler(event, gattc_if, param);
+	for(auto myPair : m_connectedClientsMap) {
+		BLEClient* pClient = (BLEClient*)myPair.second.peer_device;
+		if(pClient->getGattcIf() == gattc_if || pClient->getGattcIf() == ESP_GATT_IF_NONE || gattc_if == ESP_GATT_IF_NONE){
+			pClient->gattClientEventHandler(event, gattc_if, param);
 		}
 	}
 
@@ -268,8 +282,9 @@ gatts_event_handler BLEDevice::m_customGattsHandler = nullptr;
 		}
 	} // switch
 
-	if (BLEDevice::m_pClient != nullptr) {
-		BLEDevice::m_pClient->handleGAPEvent(event, param);
+	for(auto myPair : m_connectedClientsMap) {
+		BLEClient* pClient = (BLEClient*)myPair.second.peer_device;
+		pClient->handleGAPEvent(event, param);
 	}
 
 	if (BLEDevice::m_pScan != nullptr) {
@@ -572,45 +587,38 @@ void BLEDevice::startAdvertising() {
 
 /* multi connect support */
 /* requires a little more work */
-std::map<uint16_t, conn_status_t> BLEDevice::getPeerDevices(bool _client) {
+std::map<uint16_t, conn_status_t> BLEDevice::getPeerDevices() {
 	return m_connectedClientsMap;
 }
 
+BLEClient* BLEDevice::getClientByAppId(uint16_t appId) {
+	return (BLEClient*)m_connectedClientsMap.find(appId)->second.peer_device;
+}
+
 BLEClient* BLEDevice::getClientByGattIf(uint16_t conn_id) {
-	return (BLEClient*)m_connectedClientsMap.find(conn_id)->second.peer_device;
-}
-
-void BLEDevice::updatePeerDevice(void* peer, bool _client, uint16_t conn_id) {
-	log_d("update conn_id: %d, GATT role: %s", conn_id, _client? "client":"server");
-	std::map<uint16_t, conn_status_t>::iterator it = m_connectedClientsMap.find(ESP_GATT_IF_NONE);
-	if (it != m_connectedClientsMap.end()) {
-		std::swap(m_connectedClientsMap[conn_id], it->second);
-		m_connectedClientsMap.erase(it);
-	}else{
-		it = m_connectedClientsMap.find(conn_id);
-		if (it != m_connectedClientsMap.end()) {
-			conn_status_t _st = it->second;
-			_st.peer_device = peer;
-			std::swap(m_connectedClientsMap[conn_id], _st);
-		}
+	for (auto itr : m_connectedClientsMap) {
+		auto pClient = (BLEClient*)itr.second.peer_device;
+		if(pClient != NULL && pClient->getConnId() == conn_id)
+			return pClient;
 	}
+	return NULL;
 }
 
-void BLEDevice::addPeerDevice(void* peer, bool _client, uint16_t conn_id) {
-	log_i("add conn_id: %d, GATT role: %s", conn_id, _client? "client":"server");
+void BLEDevice::addPeerDevice(void* peer, uint16_t appId) {
+	log_i("add appId: %d, GATT role: client", appId);
 	conn_status_t status = {
 		.peer_device = peer,
 		.connected = true,
 		.mtu = 23
 	};
 
-	m_connectedClientsMap.insert(std::pair<uint16_t, conn_status_t>(conn_id, status));
+	m_connectedClientsMap.insert(std::pair<uint16_t, conn_status_t>(appId, status));
 }
 
-void BLEDevice::removePeerDevice(uint16_t conn_id, bool _client) {
-	log_i("remove: %d, GATT role %s", conn_id, _client?"client":"server");
-	if(m_connectedClientsMap.find(conn_id) != m_connectedClientsMap.end())
-		m_connectedClientsMap.erase(conn_id);
+void BLEDevice::removePeerDevice(uint16_t appId) {
+	log_i("remove: %d, GATT role client", appId);
+	if(m_connectedClientsMap.find(appId) != m_connectedClientsMap.end())
+		m_connectedClientsMap.erase(appId);
 }
 
 /* multi connect support */

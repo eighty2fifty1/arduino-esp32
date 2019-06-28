@@ -35,6 +35,7 @@ public:
 	void                dump();
 	int                 getCount();
 	BLEAdvertisedDevice getDevice(uint32_t i);
+	std::map<std::string, BLEAdvertisedDevice*> getDevices();
 
 private:
 	friend BLEScan;

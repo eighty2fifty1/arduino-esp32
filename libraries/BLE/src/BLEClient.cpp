@@ -46,7 +46,14 @@ BLEClient::BLEClient() {
 	m_conn_id          = ESP_GATT_IF_NONE;
 	m_gattc_if         = ESP_GATT_IF_NONE;
 	m_haveServices     = false;
+	m_isRegistered     = false;
 	m_isConnected      = false;  // Initially, we are flagged as not connected.
+	m_isOpened         = false;
+} // BLEClient
+
+BLEClient::BLEClient(BLEAdvertisedDevice* device) : BLEClient() {
+	m_peerAddress = device->getAddress();
+	m_peerType = device->getAddressType();
 } // BLEClient
 
 
@@ -60,6 +67,7 @@ BLEClient::~BLEClient() {
 	   delete myPair.second;
 	}
 	m_servicesMap.clear();
+	unregist();
 } // ~BLEClient
 
 
@@ -78,6 +86,40 @@ void BLEClient::clearServices() {
 	log_v("<< clearServices");
 } // clearServices
 
+bool BLEClient::regist() {
+	log_v(">> regist()");
+	m_appId    = BLEDevice::m_appId++;
+	BLEDevice::addPeerDevice(this, m_appId);
+	m_semaphoreRegEvt.take("regist");
+
+	uint32_t rc = ::esp_ble_gattc_app_register(m_appId);
+	if (rc != ESP_OK) {
+		log_e("esp_ble_gattc_app_register: rc=%d %s", rc, GeneralUtils::errorToString(rc));
+		return false;
+	}
+
+	rc = m_semaphoreRegEvt.wait("regist");
+	
+	log_v("<< regist()");
+	return rc == ESP_OK;
+}
+
+void BLEClient::unregist() {
+	log_v(">> unregist()");
+	
+	if(isConnected()) {
+		disconnect();
+	}
+	
+	if(m_isRegistered) {
+		m_semaphoreRegEvt.take("unregist");
+		esp_ble_gattc_app_unregister(m_gattc_if);
+		m_semaphoreRegEvt.wait("unregist");
+		BLEDevice::removePeerDevice(m_appId);
+	}
+	log_v("<< unregist()");
+	return;
+}
 /**
  * Add overloaded function to ease connect to peer device with not public address
  */
@@ -97,39 +139,41 @@ bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
 
 // We need the connection handle that we get from registering the application.  We register the app
 // and then block on its completion.  When the event has arrived, we will have the handle.
-	m_appId = BLEDevice::m_appId++;
-	BLEDevice::addPeerDevice(this, true, m_appId);
-	m_semaphoreRegEvt.take("connect");
 
-	// clearServices(); // we dont need to delete services since every client is unique?
-	esp_err_t errRc = ::esp_ble_gattc_app_register(m_appId);
-	if (errRc != ESP_OK) {
-		log_e("esp_ble_gattc_app_register: rc=%d %s", errRc, GeneralUtils::errorToString(errRc));
+	if(!m_isRegistered && !regist())
 		return false;
-	}
-
-	m_semaphoreRegEvt.wait("connect");
 
 	m_peerAddress = address;
+	m_peerType = type;
 
 	// Perform the open connection request against the target BLE Server.
 	m_semaphoreOpenEvt.take("connect");
-	errRc = ::esp_ble_gattc_open(
+	uint32_t rc = ::esp_ble_gattc_open(
 		m_gattc_if,
-		*getPeerAddress().getNative(), // address
-		type,          // Note: This was added on 2018-04-03 when the latest ESP-IDF was detected to have changed the signature.
-		1                              // direct connection <-- maybe needs to be changed in case of direct indirect connection???
+		*m_peerAddress.getNative(), // address
+		m_peerType,                    // Note: This was added on 2018-04-03 when the latest ESP-IDF was detected to have changed the signature.
+		true                           // direct connection <-- maybe needs to be changed in case of direct indirect connection???
 	);
-	if (errRc != ESP_OK) {
-		log_e("esp_ble_gattc_open: rc=%d %s", errRc, GeneralUtils::errorToString(errRc));
+	if (rc != ESP_OK) {
+		log_e("esp_ble_gattc_open: rc=%d %s", rc, GeneralUtils::errorToString(rc));
 		return false;
 	}
 
-	uint32_t rc = m_semaphoreOpenEvt.wait("connect");   // Wait for the connection to complete.
+	rc = m_semaphoreOpenEvt.wait("connect");   // Wait for the connection to complete.
 	log_v("<< connect(), rc=%d", rc==ESP_GATT_OK);
+	
+	if(!m_isConnected || !m_isOpened)
+		return false;
+	
 	return rc == ESP_GATT_OK;
 } // connect
 
+/**
+ * ReConnect with last condition
+ */
+bool BLEClient::connect() {
+	return connect(m_peerAddress, m_peerType);
+}
 
 /**
  * @brief Disconnect from the peer.
@@ -154,6 +198,17 @@ void BLEClient::gattClientEventHandler(
 	esp_gatt_if_t             gattc_if,
 	esp_ble_gattc_cb_param_t* evtParam) {
 
+	if(event == ESP_GATTC_REG_EVT && m_appId != evtParam->reg.app_id)
+		return;
+	if(event == ESP_GATTC_CONNECT_EVT && memcmp(getPeerAddress().getNative(), evtParam->connect.remote_bda, 6))
+		return;
+	if(event == ESP_GATTC_OPEN_EVT && memcmp(getPeerAddress().getNative(), evtParam->open.remote_bda, 6))
+		return;
+	if(event == ESP_GATTC_CLOSE_EVT && memcmp(getPeerAddress().getNative(), evtParam->close.remote_bda, 6))
+		return;
+	if(event == ESP_GATTC_DISCONNECT_EVT && memcmp(getPeerAddress().getNative(), evtParam->disconnect.remote_bda, 6))
+		return;
+
 	log_d("gattClientEventHandler [esp_gatt_if: %d] ... %s",
 		gattc_if, BLEUtils::gattClientEventTypeToString(event).c_str());
 
@@ -165,8 +220,7 @@ void BLEClient::gattClientEventHandler(
 			break;
 
 		case ESP_GATTC_CLOSE_EVT: {
-				// esp_ble_gattc_app_unregister(m_appId);
-				// BLEDevice::removePeerDevice(m_gattc_if, true);
+			m_isOpened = false;
 			break;
 		}
 
@@ -180,15 +234,13 @@ void BLEClient::gattClientEventHandler(
 		case ESP_GATTC_DISCONNECT_EVT: {
 				// If we receive a disconnect event, set the class flag that indicates that we are
 				// no longer connected.
-				m_isConnected = false;
-				if (m_pClientCallbacks != nullptr) {
-					m_pClientCallbacks->onDisconnect(this);
-				}
-				BLEDevice::removePeerDevice(m_appId, true);
-				esp_ble_gattc_app_unregister(m_gattc_if);
-				m_semaphoreRssiCmplEvt.give();
-				m_semaphoreSearchCmplEvt.give(1);
-				break;
+			if (m_pClientCallbacks != nullptr) {
+				m_pClientCallbacks->onDisconnect(this);
+			}
+			m_semaphoreRssiCmplEvt.give();
+			m_semaphoreSearchCmplEvt.give(1);
+			m_isConnected = false;
+			break;
 		} // ESP_GATTC_DISCONNECT_EVT
 
 		//
@@ -200,12 +252,14 @@ void BLEClient::gattClientEventHandler(
 		// - esp_bd_addr_t     remote_bda
 		//
 		case ESP_GATTC_OPEN_EVT: {
-			m_conn_id = evtParam->open.conn_id;
+			if (evtParam->open.status == ESP_GATT_OK) {
+				m_conn_id = evtParam->open.conn_id;
+			}
 			if (m_pClientCallbacks != nullptr) {
 				m_pClientCallbacks->onConnect(this);
 			}
 			if (evtParam->open.status == ESP_GATT_OK) {
-				m_isConnected = true;   // Flag us as connected.
+				m_isOpened = true;
 			}
 			m_semaphoreOpenEvt.give(evtParam->open.status);
 			break;
@@ -220,10 +274,25 @@ void BLEClient::gattClientEventHandler(
 		// uint16_t          app_id
 		//
 		case ESP_GATTC_REG_EVT: {
+			if(evtParam->reg.status != ESP_GATT_OK) {
+				log_e("Regist failed");
+			}
 			m_gattc_if = gattc_if;
-			m_semaphoreRegEvt.give();
+			if(evtParam->reg.status == ESP_GATT_OK) {
+				m_isRegistered = true;
+			}
+			m_semaphoreRegEvt.give(evtParam->reg.status);
 			break;
 		} // ESP_GATTC_REG_EVT
+
+		//
+		// ESP_GATTC_UNREG_EVT
+		//
+		case ESP_GATTC_UNREG_EVT: {
+			m_isRegistered = false;
+			m_semaphoreRegEvt.give();
+			break;
+		} // ESP_GATTC_UNREG_EVT
 
 		case ESP_GATTC_CFG_MTU_EVT:
 			if(evtParam->cfg_mtu.status != ESP_GATT_OK) {
@@ -233,7 +302,6 @@ void BLEClient::gattClientEventHandler(
 			break;
 
 		case ESP_GATTC_CONNECT_EVT: {
-			BLEDevice::updatePeerDevice(this, true, m_gattc_if);
 			esp_err_t errRc = esp_ble_gattc_send_mtu_req(gattc_if, evtParam->connect.conn_id);
 			if (errRc != ESP_OK) {
 				log_e("esp_ble_gattc_send_mtu_req: rc=%d %s", errRc, GeneralUtils::errorToString(errRc));
@@ -241,6 +309,9 @@ void BLEClient::gattClientEventHandler(
 #ifdef CONFIG_BLE_SMP_ENABLE   // Check that BLE SMP (security) is configured in make menuconfig
 			if(BLEDevice::m_securityLevel){
 				esp_ble_set_encryption(evtParam->connect.remote_bda, BLEDevice::m_securityLevel);
+			}
+			if (errRc == ESP_OK) {
+				m_isConnected = true;   // Flag us as connected.
 			}
 #endif	// CONFIG_BLE_SMP_ENABLE
 			break;
@@ -454,6 +525,10 @@ std::string BLEClient::getValue(BLEUUID serviceUUID, BLEUUID characteristicUUID)
 void BLEClient::handleGAPEvent(
 		esp_gap_ble_cb_event_t  event,
 		esp_ble_gap_cb_param_t* param) {
+
+	if(event == ESP_GAP_BLE_READ_RSSI_COMPLETE_EVT && memcmp(getPeerAddress().getNative(), param->read_rssi_cmpl.remote_addr, 6))
+		return;
+
 	log_d("BLEClient ... handling GAP event!");
 	switch (event) {
 		//
@@ -480,8 +555,12 @@ void BLEClient::handleGAPEvent(
  * @return True if we are connected and false if we are not connected.
  */
 bool BLEClient::isConnected() {
-	return m_isConnected;
+	return m_isConnected && m_isOpened;
 } // isConnected
+
+bool BLEClient::isDisconnected() {
+	return !m_isConnected && !m_isOpened;
+} // isDisconnected
 
 
 

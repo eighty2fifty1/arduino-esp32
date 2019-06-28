@@ -308,6 +308,14 @@ BLEAdvertisedDevice BLEScanResults::getDevice(uint32_t i) {
 	return dev;
 }
 
+/**
+ * @brief Retrieve a map of all the device of this result.
+ * @return A map of all the device of this result.
+ */
+std::map<std::string, BLEAdvertisedDevice*> BLEScanResults::getDevices() {
+	return m_vectorAdvertisedDevices;
+}
+
 BLEScanResults BLEScan::getResults() {
 	return m_scanResults;
 }

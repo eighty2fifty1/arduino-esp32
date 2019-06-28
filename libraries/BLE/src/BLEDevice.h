@@ -20,6 +20,7 @@
 #include "BLEUtils.h"
 #include "BLEScan.h"
 #include "BLEAddress.h"
+#include "BLEAdvertisedDevice.h"
 
 /**
  * @brief BLE functions.
@@ -32,6 +33,7 @@ class BLEDevice {
 public:
 
 	static BLEClient*  createClient();    // Create a new BLE client.
+	static BLEClient*  createClient(BLEAdvertisedDevice* device);
 	static BLEServer*  createServer();    // Cretae a new BLE server.
 	static BLEAddress  getAddress();      // Retrieve our own local BD address.
 	static BLEScan*    getScan();         // Get the scan object
@@ -52,10 +54,10 @@ public:
 	static void		   		startAdvertising();
 	static uint16_t 	m_appId;
 	/* multi connect */
-	static std::map<uint16_t, conn_status_t> getPeerDevices(bool client);
-	static void addPeerDevice(void* peer, bool is_client, uint16_t conn_id);
-	static void updatePeerDevice(void* peer, bool _client, uint16_t conn_id);
-	static void removePeerDevice(uint16_t conn_id, bool client);
+	static std::map<uint16_t, conn_status_t> getPeerDevices();
+	static void addPeerDevice(void* peer, uint16_t appID);
+	static void removePeerDevice(uint16_t appID);
+	static BLEClient* getClientByAppId(uint16_t appID);
 	static BLEClient* getClientByGattIf(uint16_t conn_id);
 	static void setCustomGapHandler(gap_event_handler handler);
 	static void setCustomGattcHandler(gattc_event_handler handler);
@@ -67,7 +69,6 @@ public:
 private:
 	static BLEServer*	m_pServer;
 	static BLEScan*		m_pScan;
-	static BLEClient*	m_pClient;
 	static BLESecurityCallbacks* m_securityCallbacks;
 	static BLEAdvertising* m_bleAdvertising;
 	static esp_gatt_if_t getGattcIF();

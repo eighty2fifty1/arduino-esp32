@@ -31,8 +31,12 @@ class BLEAdvertisedDevice;
 class BLEClient {
 public:
 	BLEClient();
+	BLEClient(BLEAdvertisedDevice* device);
 	~BLEClient();
 
+	bool									   regist();
+	void									   unregist();
+	bool 									   connect();
 	bool 									   connect(BLEAdvertisedDevice* device);
 	bool                                       connect(BLEAddress address, esp_ble_addr_type_t type = BLE_ADDR_TYPE_PUBLIC);   // Connect to the remote BLE Server
 	void                                       disconnect();                  // Disconnect from the remote BLE Server
@@ -43,12 +47,10 @@ public:
 	BLERemoteService*                          getService(BLEUUID uuid);      // Get a reference to a specified service offered by the remote BLE server.
 	std::string                                getValue(BLEUUID serviceUUID, BLEUUID characteristicUUID);   // Get the value of a given characteristic at a given service.
 
-
-	void                                       handleGAPEvent(
-		                                            esp_gap_ble_cb_event_t  event,
-                                                esp_ble_gap_cb_param_t* param);
+	void                                       handleGAPEvent(esp_gap_ble_cb_event_t  event, esp_ble_gap_cb_param_t* param);
 
 	bool                                       isConnected();                 // Return true if we are connected.
+	bool                                       isDisconnected();              // Return true if we are disconnected.
 
 	void                                       setClientCallbacks(BLEClientCallbacks *pClientCallbacks);
 	void                                       setValue(BLEUUID serviceUUID, BLEUUID characteristicUUID, std::string value);   // Set the value of a given characteristic at a given service.
@@ -57,8 +59,7 @@ public:
 	uint16_t                                   getConnId();
 	esp_gatt_if_t                              getGattcIf();
 	uint16_t								   getMTU();
-
-uint16_t m_appId;
+	
 private:
 	friend class BLEDevice;
 	friend class BLERemoteService;
@@ -71,11 +72,15 @@ private:
 		esp_ble_gattc_cb_param_t* param);
 
 	BLEAddress    m_peerAddress = BLEAddress((uint8_t*)"\0\0\0\0\0\0");   // The BD address of the remote server.
+	esp_ble_addr_type_t    m_peerType = BLE_ADDR_TYPE_PUBLIC;
+	uint16_t      m_appId;
 	uint16_t      m_conn_id;
 //	int           m_deviceType;
 	esp_gatt_if_t m_gattc_if;
 	bool          m_haveServices = false;    // Have we previously obtain the set of services from the remote server.
+	bool          m_isRegistered = false;    // Are we currently registered.
 	bool          m_isConnected = false;     // Are we currently connected.
+	bool          m_isOpened = false;        // Are we currently opened.
 
 	BLEClientCallbacks* m_pClientCallbacks;
 	FreeRTOS::Semaphore m_semaphoreRegEvt        = FreeRTOS::Semaphore("RegEvt");
