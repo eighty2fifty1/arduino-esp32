@@ -37,14 +37,19 @@ void setup() {
   Serial.println("wait 10 secs..");
   auto pScanResults = pBLEScan->start(10);
 
-  for (auto itr : pScanResults.getDevices()) {
-    auto advertisedDevice = itr.second;
-    if (advertisedDevice->haveServiceUUID())  {
+  for (int i = 0; i < pScanResults.getCount(); i++) {
+    auto advertisedDevice = pScanResults.getDevice(i);
+    if (advertisedDevice.haveServiceUUID())  {
       Serial.print("Found Device ");
-      Serial.println(advertisedDevice->toString().c_str());
-      PinnedTasks.push_back(xTaskCreatePinnedToCore([](void *p) {careBLEClient((BLEClient*)p);}
-        , "careBLEClient", 4096, BLEDevice::createClient(advertisedDevice), 10, NULL, CONFIG_ARDUINO_RUNNING_CORE)
-      );
+      Serial.print(advertisedDevice.toString().c_str());
+      auto pClient = BLEDevice::createClient(&advertisedDevice);
+      if(pClient->regist()) {
+        PinnedTasks.push_back(xTaskCreatePinnedToCore([](void *p) {careBLEClient((BLEClient*)p);}
+          , "careBLEClient", 4096, pClient, 10, NULL, CONFIG_ARDUINO_RUNNING_CORE)
+        );
+        Serial.println(" registered");
+      } else 
+        Serial.println();
     }
   }
 

@@ -87,6 +87,9 @@ void BLEClient::clearServices() {
 } // clearServices
 
 bool BLEClient::regist() {
+	if(m_isRegistered)
+		return true;
+	
 	log_v(">> regist()");
 	m_appId    = BLEDevice::m_appId++;
 	BLEDevice::addPeerDevice(this, m_appId);
@@ -140,7 +143,7 @@ bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
 // We need the connection handle that we get from registering the application.  We register the app
 // and then block on its completion.  When the event has arrived, we will have the handle.
 
-	if(!m_isRegistered && !regist())
+	if(!regist())
 		return false;
 
 	m_peerAddress = address;
