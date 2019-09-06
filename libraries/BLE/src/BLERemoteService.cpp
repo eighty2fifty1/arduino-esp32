@@ -14,6 +14,8 @@
 #include <esp_err.h>
 #include "esp32-hal-log.h"
 
+#pragma GCC diagnostic warning "-Wunused-but-set-parameter"
+
 BLERemoteService::BLERemoteService(
 		esp_gatt_id_t srvcId,
 		BLEClient*    pClient,
@@ -242,7 +244,6 @@ std::map<uint16_t, BLERemoteCharacteristic*>* BLERemoteService::getCharacteristi
  * @brief This function is designed to get characteristics map when we have multiple characteristics with the same UUID
  */
 void BLERemoteService::getCharacteristics(std::map<uint16_t, BLERemoteCharacteristic*>* pCharacteristicMap) {
-#pragma GCC diagnostic ignored "-Wunused-but-set-parameter"
 	pCharacteristicMap = &m_characteristicMapByHandle;
 }  // Get the characteristics map.
 
