@@ -50,13 +50,13 @@ bool WiFiMulti::addAP(const char* ssid, const char *passphrase)
 {
     WifiAPlist_t newAP;
 
-    if(!ssid || *ssid == 0x00 || strlen(ssid) > 31) {
+    if(!ssid || *ssid == 0x00 || strlen(ssid) > 32) {
         // fail SSID too long or missing!
         log_e("[WIFI][APlistAdd] no ssid or ssid too long");
         return false;
     }
 
-    if(passphrase && strlen(passphrase) > 63) {
+    if(passphrase && strlen(passphrase) > 64) {
         // fail passphrase too long!
         log_e("[WIFI][APlistAdd] passphrase too long");
         return false;

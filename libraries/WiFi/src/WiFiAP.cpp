@@ -58,10 +58,10 @@ static bool softap_config_equal(const wifi_config_t& lhs, const wifi_config_t& r
  */
 static bool softap_config_equal(const wifi_config_t& lhs, const wifi_config_t& rhs)
 {
-    if(strcmp(reinterpret_cast<const char*>(lhs.ap.ssid), reinterpret_cast<const char*>(rhs.ap.ssid)) != 0) {
+    if(memcmp(reinterpret_cast<const char*>(lhs.ap.ssid), reinterpret_cast<const char*>(rhs.ap.ssid), sizeof(lhs.ap.ssid)) != 0) {
         return false;
     }
-    if(strcmp(reinterpret_cast<const char*>(lhs.ap.password), reinterpret_cast<const char*>(rhs.ap.password)) != 0) {
+    if(memcmp(reinterpret_cast<const char*>(lhs.ap.password), reinterpret_cast<const char*>(rhs.ap.password), sizeof(lhs.ap.password)) != 0) {
         return false;
     }
     if(lhs.ap.channel != rhs.ap.channel) {
@@ -83,7 +83,7 @@ static bool softap_config_equal(const wifi_config_t& lhs, const wifi_config_t& r
 
 /**
  * Set up an access point
- * @param ssid              Pointer to the SSID (max 63 char).
+ * @param ssid              Pointer to the SSID (max 32 char).
  * @param passphrase        (for WPA2 min 8 char, for open use NULL)
  * @param channel           WiFi channel number, 1 - 13.
  * @param ssid_hidden       Network cloaking (0 = broadcast SSID, 1 = hide SSID)
@@ -113,19 +113,27 @@ bool WiFiAPClass::softAP(const char* ssid, const char* passphrase, int channel, 
     esp_wifi_start();
 
     wifi_config_t conf;
-    strlcpy(reinterpret_cast<char*>(conf.ap.ssid), ssid, sizeof(conf.ap.ssid));
+    memset(&conf, 0, sizeof(wifi_config_t));
+    if(strlen(ssid) == 32) {
+        memcpy(reinterpret_cast<char*>(conf.ap.ssid), ssid, 32);
+    } else {
+        strlcpy(reinterpret_cast<char*>(conf.ap.ssid), ssid, sizeof(conf.ap.ssid));
+    }
     conf.ap.channel = channel;
-    conf.ap.ssid_len = strlen(reinterpret_cast<char *>(conf.ap.ssid));
+    conf.ap.ssid_len = strlen(ssid);
     conf.ap.ssid_hidden = ssid_hidden;
     conf.ap.max_connection = max_connection;
     conf.ap.beacon_interval = 100;
 
     if(!passphrase || strlen(passphrase) == 0) {
         conf.ap.authmode = WIFI_AUTH_OPEN;
-        *conf.ap.password = 0;
     } else {
         conf.ap.authmode = WIFI_AUTH_WPA2_PSK;
-        strlcpy(reinterpret_cast<char*>(conf.ap.password), passphrase, sizeof(conf.ap.password));
+        if(strlen(passphrase) == 64) {
+            memcpy(reinterpret_cast<char*>(conf.ap.password), passphrase, 64);
+        } else {
+            strlcpy(reinterpret_cast<char*>(conf.ap.password), passphrase, sizeof(conf.ap.password));
+        }
     }
 
     wifi_config_t conf_current;

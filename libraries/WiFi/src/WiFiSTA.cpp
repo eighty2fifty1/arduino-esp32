@@ -120,7 +120,7 @@ wl_status_t WiFiSTAClass::begin(const char* ssid, const char *passphrase, int32_
         return WL_CONNECT_FAILED;
     }
 
-    if(!ssid || *ssid == 0x00 || strlen(ssid) > 31) {
+    if(!ssid || *ssid == 0x00 || strlen(ssid) > 32) {
         log_e("SSID too long or missing!");
         return WL_CONNECT_FAILED;
     }
@@ -132,7 +132,12 @@ wl_status_t WiFiSTAClass::begin(const char* ssid, const char *passphrase, int32_
 
     wifi_config_t conf;
     memset(&conf, 0, sizeof(wifi_config_t));
-    strcpy(reinterpret_cast<char*>(conf.sta.ssid), ssid);
+    if(strlen(ssid) == 32)  {
+        memcpy(reinterpret_cast<char*>(conf.sta.ssid), ssid, 32);
+    } else {
+        strcpy(reinterpret_cast<char*>(conf.sta.ssid), ssid);
+    }
+    
 
     if(passphrase) {
         if (strlen(passphrase) == 64){ // it's not a passphrase, is the PSK
@@ -743,7 +748,7 @@ void WiFiSTAClass::_smartConfigCallback(uint32_t st, void* result) {
 #endif
     } else if (status == SC_STATUS_LINK) {
         wifi_sta_config_t *sta_conf = reinterpret_cast<wifi_sta_config_t *>(result);
-        log_d("SSID: %s", (char *)(sta_conf->ssid));
+        log_d("SSID: %-32s", (char *)(sta_conf->ssid));
         sta_conf->bssid_set = 0;
         esp_wifi_set_config(WIFI_IF_STA, (wifi_config_t *)sta_conf);
         esp_wifi_connect();
