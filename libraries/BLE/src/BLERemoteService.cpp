@@ -225,21 +225,7 @@ std::map<std::string, BLERemoteCharacteristic*>* BLERemoteService::getCharacteri
 	log_v("<< getCharacteristics() for service: %s", getUUID().toString().c_str());
 	return &m_characteristicMap;
 } // getCharacteristics
-/**
- * @brief Retrieve a map of all the characteristics of this service.
- * @return A map of all the characteristics of this service.
- */
-std::map<uint16_t, BLERemoteCharacteristic*>* BLERemoteService::getCharacteristicsByHandle() {
-	ESP_LOGD(LOG_TAG, ">> getCharacteristicsByHandle() for service: %s", getUUID().toString().c_str());
-	// If is possible that we have not read the characteristics associated with the service so do that
-	// now.  The request to retrieve the characteristics by calling "retrieveCharacteristics" is a blocking
-	// call and does not return until all the characteristics are available.
-	if (!m_haveCharacteristics) {
-		retrieveCharacteristics();
-	}
-	ESP_LOGD(LOG_TAG, "<< getCharacteristicsByHandle() for service: %s", getUUID().toString().c_str());
-	return &m_characteristicMapByHandle;
-} // getCharacteristicsByHandle
+
 /**
  * @brief Retrieve a map of all the characteristics of this service.
  * @return A map of all the characteristics of this service.
