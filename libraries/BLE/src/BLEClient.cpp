@@ -63,10 +63,7 @@ BLEClient::BLEClient(BLEAdvertisedDevice* device) : BLEClient() {
 BLEClient::~BLEClient() {
 	// We may have allocated service references associated with this client.  Before we are finished
 	// with the client, we must release resources.
-	for (auto &myPair : m_servicesMap) {
-	   delete myPair.second;
-	}
-	m_servicesMap.clear();
+	clearServices();
 	unregist();
 } // ~BLEClient
 
@@ -79,8 +76,10 @@ void BLEClient::clearServices() {
 	log_v(">> clearServices");
 	// Delete all the services.
 	for (auto &myPair : m_servicesMap) {
+		m_servicesMapByInstID.erase(myPair.second);
 	   delete myPair.second;
 	}
+	m_servicesMapByInstID.clear();
 	m_servicesMap.clear();
 	m_haveServices = false;
 	log_v("<< clearServices");
@@ -119,6 +118,7 @@ void BLEClient::unregist() {
 		esp_ble_gattc_app_unregister(m_gattc_if);
 		m_semaphoreRegEvt.wait("unregist");
 		BLEDevice::removePeerDevice(m_appId);
+		m_isRegistered = false;
 	}
 	log_v("<< unregist()");
 	return;
@@ -138,11 +138,13 @@ bool BLEClient::connect(BLEAdvertisedDevice* device) {
  * @return True on success.
  */
 bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
-	log_v(">> connect(%s)", address.toString().c_str());
+	log_v(">> connect(%s/%d)", address.toString().c_str(), type);
 
 // We need the connection handle that we get from registering the application.  We register the app
 // and then block on its completion.  When the event has arrived, we will have the handle.
 
+	bool registered= m_isRegistered;
+	
 	if(!regist())
 		return false;
 
@@ -163,10 +165,14 @@ bool BLEClient::connect(BLEAddress address, esp_ble_addr_type_t type) {
 	}
 
 	rc = m_semaphoreOpenEvt.wait("connect");   // Wait for the connection to complete.
-	log_v("<< connect(), rc=%d", rc==ESP_GATT_OK);
+	log_v("<< connect(), rc=0x%02x", rc);
 	
-	if(!m_isConnected || !m_isOpened)
+	if(!registered && !m_isConnected && !m_isOpened)
+	{
+		unregist();
 		return false;
+	}
+		
 	
 	return rc == ESP_GATT_OK;
 } // connect
@@ -313,10 +319,10 @@ void BLEClient::gattClientEventHandler(
 			if(BLEDevice::m_securityLevel){
 				esp_ble_set_encryption(evtParam->connect.remote_bda, BLEDevice::m_securityLevel);
 			}
+#endif	// CONFIG_BLE_SMP_ENABLE
 			if (errRc == ESP_OK) {
 				m_isConnected = true;   // Flag us as connected.
 			}
-#endif	// CONFIG_BLE_SMP_ENABLE
 			break;
 		} // ESP_GATTC_CONNECT_EVT
 
@@ -375,12 +381,15 @@ void BLEClient::gattClientEventHandler(
 			break;
 		}
 	} // Switch
-
+		
 	// Pass the request on to all services.
 	for (auto &myPair : m_servicesMap) {
 	   myPair.second->gattClientEventHandler(event, gattc_if, evtParam);
 	}
 
+	if(m_haveServices && isDisconnected())
+		clearServices();
+		
 } // gattClientEventHandler
 
 
@@ -403,6 +412,10 @@ esp_gatt_if_t BLEClient::getGattcIf() {
 BLEAddress BLEClient::getPeerAddress() {
 	return m_peerAddress;
 } // getAddress
+
+esp_ble_addr_type_t BLEClient::getPeerType() {
+	return m_peerType;
+} // getPeerType
 
 
 /**

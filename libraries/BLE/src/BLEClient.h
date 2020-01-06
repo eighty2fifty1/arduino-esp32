@@ -41,6 +41,7 @@ public:
 	bool                                       connect(BLEAddress address, esp_ble_addr_type_t type = BLE_ADDR_TYPE_PUBLIC);   // Connect to the remote BLE Server
 	void                                       disconnect();                  // Disconnect from the remote BLE Server
 	BLEAddress                                 getPeerAddress();              // Get the address of the remote BLE Server
+	esp_ble_addr_type_t                        getPeerType();
 	int                                        getRssi();                     // Get the RSSI of the remote BLE Server
 	std::map<std::string, BLERemoteService*>*  getServices();                 // Get a map of the services offered by the remote BLE Server
 	BLERemoteService*                          getService(const char* uuid);  // Get a reference to a specified service offered by the remote BLE server.
