@@ -468,7 +468,7 @@ void BLERemoteCharacteristic::registerForNotify(notify_callback notifyCallback, 
 		uint8_t val[] = {0x01, 0x00};
 		if(!notifications) val[0] = 0x02;
 		BLERemoteDescriptor* desc = getDescriptor(BLEUUID((uint16_t)0x2902));
-		if(desc != nullptr)
+		if (desc != nullptr)
 			desc->writeValue(val, 2);
 	} // End Register
 	else {   // If we weren't passed a callback function, then this is an unregistration.
@@ -484,7 +484,7 @@ void BLERemoteCharacteristic::registerForNotify(notify_callback notifyCallback, 
 
 		uint8_t val[] = {0x00, 0x00};
 		BLERemoteDescriptor* desc = getDescriptor((uint16_t)0x2902);
-		if(desc != nullptr)
+		if (desc != nullptr)
 			desc->writeValue(val, 2);
 	} // End Unregister
 
